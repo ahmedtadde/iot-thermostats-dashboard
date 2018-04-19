@@ -1,17 +1,21 @@
 $(document).ready(function() {
   const dom = buildDom();
-  //   console.log(dom);
+  //
   XMLHttpPromise("https://wi-iot-thermostats-demo.herokuapp.com/devices")
     .then(function(data) {
       if (data && Array.isArray(data)) {
         renderDeviceOptions(data, dom);
         document.getElementById("default-view").classList.remove("d-none");
         document.getElementById("no-devices-view").classList.add("d-none");
+
+        renderCurrentTemp(dom);
         return data;
       }
     })
     .then(function(data) {
+      // console.log(data);
       const timeinputs = Flatpickr(data, dom);
+      // console.log(timeinputs);
       (function() {
         $("#devices").on("change", function() {
           const device = getDeviceSettings(
@@ -20,6 +24,8 @@ $(document).ready(function() {
               .val(),
             data
           );
+
+          // console.log(device);
           if (device) render(device, timeinputs, dom);
         });
       })();
@@ -31,13 +37,14 @@ $(document).ready(function() {
 
 function getDeviceSettings(device, data) {
   //   console.log(device, data);
-  const match = data.filter(record => record["id"] === parseInt(device));
+  const match = data.filter(record => record["_id"].toString() === device);
   //   console.log(match);
   if (match.length) return match[0];
   return null;
 }
 
 function render(device, timeinputs, dom) {
+  // console.log(device, timeinputs, dom);
   const start = ymdhmsDateFormat(timeinputs.start.latestSelectedDateObj);
   const end = ymdhmsDateFormat(timeinputs.end.latestSelectedDateObj);
 
@@ -221,6 +228,75 @@ function renderTargetMinimum(dom, data, targetMin) {
   }
 
   return data;
+}
+
+function renderCurrentTemp(dom) {
+  // console.log($("#devices").val());
+  const device = $("#devices").val();
+  console.log(
+    `https://wi-iot-thermostats-demo.herokuapp.com/devices/${device}`
+  );
+  XMLHttpPromise(
+    `https://wi-iot-thermostats-demo.herokuapp.com/devices/${device}`
+  )
+    .then(data => {
+      //   console.log("Updating to current temperature...");
+
+      const url = `https://api.thingspeak.com/channels/${
+        data.channel_id
+      }/fields/1/last.json?api_key=${data.api_key}`;
+
+      const target = data.target;
+      const targetMax = data.target_max;
+      const targetMin = data.target_min;
+
+      XMLHttpPromise(url).then(function(data) {
+        const current = parseFloat(data.field1.trim());
+        const currentVersusTarget = current - target;
+        if (currentVersusTarget < 0 && current < targetMin) {
+          dom.current.innerHTML = `
+                  <span class="text-center card-title mb-0">${current.toFixed(
+                    2
+                  )}&deg;</span>
+                  <span class="text-center alert-danger">${currentVersusTarget.toFixed(
+                    2
+                  )}&deg; compared to target</span>`;
+        } else if (currentVersusTarget < 0 && current > targetMin) {
+          dom.current.innerHTML = `
+                  <span class="text-center card-title mb-0">${current.toFixed(
+                    2
+                  )}&deg;</span>
+                  <span class="text-center alert-success">${currentVersusTarget.toFixed(
+                    2
+                  )}&deg; compared to target</span>`;
+        } else if (currentVersusTarget > 0 && current > targetMax) {
+          dom.current.innerHTML = `
+                  <span class="text-center card-title mb-0">${current.toFixed(
+                    2
+                  )}&deg;</span>
+                  <span class="text-center alert-danger">+${currentVersusTarget.toFixed(
+                    2
+                  )}&deg; compared to target</span>`;
+        } else if (currentVersusTarget > 0 && current < targetMax) {
+          dom.current.innerHTML = `
+                  <span class="text-center card-title mb-0">${current.toFixed(
+                    2
+                  )}&deg;</span>
+                  <span class="text-center alert-success">+${currentVersusTarget.toFixed(
+                    2
+                  )}&deg; compared to target</span>`;
+        } else if (currentVersusTarget === 0) {
+          dom.current.innerHTML = `
+                  <span class="text-center card-title mb-0">${current}&deg;</span>
+                  <span class="text-center alert-success">same as target</span>`;
+        }
+      });
+
+      setTimeout(renderCurrentTemp, 60000, dom);
+    })
+    .catch(function(err) {
+      console.error(err);
+    });
 }
 
 function Flatpickr(data, dom) {
